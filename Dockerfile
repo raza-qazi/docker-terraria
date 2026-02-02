@@ -3,6 +3,7 @@ FROM ghcr.io/linuxserver/baseimage-ubuntu:jammy
 ARG VERSION="1453"
 LABEL maintainer="your-email@example.com"
 
+
 RUN \
  apt-get update && \
  apt-get install -y unzip curl && \
@@ -17,7 +18,8 @@ RUN \
  apt-get clean && \
  rm -rf /tmp/* /var/tmp/*
 
-RUN cat > /app/terraria/wrapper.sh << 'WRAPPER_EOF'
+# Create wrapper script
+RUN cat > /app/terraria/wrapper.sh <<'EOF'
 #!/bin/bash
 SERVER_BIN="/app/terraria/TerrariaServer.bin.x86_64"
 echo "Starting Terraria Server..."
@@ -36,16 +38,24 @@ $SERVER_BIN -config /config/serverconfig.txt -worldpath /world -logpath /world <
 SERVER_PID=$!
 exec 3>&1
 wait $SERVER_PID
-WRAPPER_EOF
-
-RUN chmod +x /app/terraria/wrapper.sh
+EOF
 
 # Create s6 service
 RUN mkdir -p /etc/services.d/terraria && \
-    echo -e '#!/usr/bin/with-contenv bash\ncd /app/terraria\nexec s6-setuidgid abc /app/terraria/wrapper.sh' > /etc/services.d/terraria/run && \
+    cat > /etc/services.d/terraria/run <<'EOF'
+#!/usr/bin/with-contenv bash
+cd /app/terraria
+exec s6-setuidgid abc /app/terraria/wrapper.sh
+EOF
+
+# Set all permissions
+RUN chmod +x /app/terraria/wrapper.sh && \
     chmod +x /etc/services.d/terraria/run
 
 COPY root/ /
+
+# Fix permissions on copied files
+RUN chmod +x /etc/cont-init.d/30-config
 
 EXPOSE 7777
 VOLUME ["/world", "/config"]

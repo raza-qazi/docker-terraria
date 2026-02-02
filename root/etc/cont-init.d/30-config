@@ -27,5 +27,6 @@ motd=Welcome to Terraria!
 EOF
 fi
 
+
 chown -R abc:abc /app/terraria /config /world
 chmod 644 /config/serverconfig.txt
