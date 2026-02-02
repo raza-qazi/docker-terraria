@@ -1,32 +1,62 @@
 #!/usr/bin/with-contenv bash
 
+echo "
+─────────────────────────────────────
+Terraria Server Configuration
+─────────────────────────────────────"
+
+# Set user IDs
 PUID=${PUID:-911}
 PGID=${PGID:-911}
 
 groupmod -o -g "$PGID" abc
 usermod -o -u "$PUID" abc
 
-echo "User uid: $(id -u abc)"
-echo "User gid: $(id -g abc)"
+echo "User UID: $PUID"
+echo "User GID: $PGID"
+echo "─────────────────────────────────────"
 
-mkdir -p /config/.local/share/Terraria /world
+# Create directories
+mkdir -p \
+    /config/.local/share/Terraria \
+    /world
 
-[[ ! -f /config/.local/share/Terraria/favorites.json ]] && \
+# Copy defaults
+if [[ ! -f /config/.local/share/Terraria/favorites.json ]]; then
     cp /defaults/favorites.json /config/.local/share/Terraria/
+fi
 
+# Create default config
 if [[ ! -f /config/serverconfig.txt ]]; then
-    cat > /config/serverconfig.txt <<EOF
+    echo "Creating default server configuration..."
+    cat > /config/serverconfig.txt <<'EOF'
 world=/world/World.wld
 worldpath=/world
 worldname=Terraria
-autocreate=2
+autocreate=3
+difficulty=2
 maxplayers=8
 port=7777
 password=
-motd=Welcome to Terraria!
+motd=Welcome to Terraria Server!
+secure=1
+language=en-US
+npcstream=60
+priority=1
 EOF
+    echo "✓ Configuration created"
 fi
 
+# Set ownership
+chown -R abc:abc \
+    /app/terraria \
+    /config \
+    /world
 
-chown -R abc:abc /app/terraria /config /world
+chmod -R 755 /app/terraria
 chmod 644 /config/serverconfig.txt
+
+echo "✓ Permissions set"
+echo "─────────────────────────────────────"
+echo "Configuration complete!"
+echo "─────────────────────────────────────"
