@@ -13,6 +13,7 @@ RUN \
  curl -L -o /tmp/terraria.zip "https://terraria.org/api/download/pc-dedicated-server/terraria-server-${version}.zip" && \
  unzip /tmp/terraria.zip ${version}'/Linux/*' -d /tmp/terraria && \
  mv /tmp/terraria/${version}/Linux/* /app/terraria/bin && \
+ chmod +x /app/terraria/bin/TerrariaServer.bin.x86_64 && \
  echo "**** creating user ****" && \
  mkdir -p /config && \
  useradd -U -d /config -s /bin/false -G users terraria && \
