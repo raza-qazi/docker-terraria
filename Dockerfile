@@ -6,7 +6,7 @@ LABEL maintainer="your-email@example.com"
 RUN \
  echo "**** install terraria ****" && \
  apt-get update && \
- apt-get install -y unzip && \
+ apt-get install -y unzip curl && \
  mkdir -p /root/.local/share/Terraria && \
  echo "{}" > /root/.local/share/Terraria/favorites.json && \
  mkdir -p /app/terraria/bin && \
@@ -15,8 +15,7 @@ RUN \
  mv /tmp/terraria/${version}/Linux/* /app/terraria/bin && \
  echo "**** creating user ****" && \
  mkdir -p /config && \
- id -u terraria &>/dev/null || useradd -u 911 -U -d /config -s /bin/false terraria && \
- usermod -G users terraria && \
+ useradd -u 911 -U -d /config -s /bin/false -G users terraria && \
  echo "**** cleanup ****" && \
  apt-get clean && \
  rm -rf \
