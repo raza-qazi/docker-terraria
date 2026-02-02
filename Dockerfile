@@ -1,46 +1,51 @@
 FROM ghcr.io/linuxserver/baseimage-ubuntu:jammy
 
-ARG version="1453"
+ARG VERSION="1453"
 LABEL maintainer="your-email@example.com"
 
 RUN \
  apt-get update && \
  apt-get install -y unzip curl && \
- mkdir -p /root/.local/share/Terraria && \
- echo "{}" > /root/.local/share/Terraria/favorites.json && \
- mkdir -p /app/terraria/bin && \
- curl -L -o /tmp/terraria.zip "https://terraria.org/api/download/pc-dedicated-server/terraria-server-${version}.zip" && \
- unzip /tmp/terraria.zip ${version}'/Linux/*' -d /tmp/terraria && \
- mv /tmp/terraria/${version}/Linux/* /app/terraria/bin && \
- mkdir -p /config && \
- useradd -U -d /config -s /bin/false -G users terraria && \
- chmod +x /app/terraria/bin/TerrariaServer.bin.x86_64 && \
- chown -R terraria:terraria /app/terraria && \
+ mkdir -p /defaults && \
+ echo "{}" > /defaults/favorites.json && \
+ mkdir -p /app/terraria && \
+ curl -L -o /tmp/terraria.zip \
+    "https://terraria.org/api/download/pc-dedicated-server/terraria-server-${VERSION}.zip" && \
+ unzip /tmp/terraria.zip "${VERSION}/Linux/*" -d /tmp/terraria && \
+ mv /tmp/terraria/${VERSION}/Linux/* /app/terraria/ && \
+ chmod +x /app/terraria/TerrariaServer.bin.x86_64 && \
  apt-get clean && \
- rm -rf \
-    /tmp/* \
-    /var/tmp/*
+ rm -rf /tmp/* /var/tmp/*
 
-RUN echo '#!/bin/bash' > /app/terraria/run.sh && \
-    echo 'PIPE=/tmp/terraria.fifo' >> /app/terraria/run.sh && \
-    echo 'rm -f $PIPE && mkfifo $PIPE' >> /app/terraria/run.sh && \
-    echo 'trap "echo exit > $PIPE" SIGTERM' >> /app/terraria/run.sh && \
-    echo '# Forward console input to the pipe' >> /app/terraria/run.sh && \
-    echo 'cat > $PIPE &' >> /app/terraria/run.sh && \
-    echo '# Start Server reading from the pipe' >> /app/terraria/run.sh && \
-    echo '/app/terraria/bin/TerrariaServer.bin.x86_64 -config /config/serverconfig.txt -worldpath /world -logpath /world < $PIPE &' >> /app/terraria/run.sh && \
-    echo 'PID=$!' >> /app/terraria/run.sh && \
-    echo 'wait $PID' >> /app/terraria/run.sh && \
-    chmod +x /app/terraria/run.sh
+RUN cat > /app/terraria/wrapper.sh << 'WRAPPER_EOF'
+#!/bin/bash
+SERVER_BIN="/app/terraria/TerrariaServer.bin.x86_64"
+echo "Starting Terraria Server..."
+
+shutdown_server() {
+    echo "Shutdown signal received, saving world..."
+    echo "exit" >&3
+    wait $SERVER_PID
+    echo "Server stopped"
+    exit 0
+}
+
+trap 'shutdown_server' SIGTERM SIGINT
+
+$SERVER_BIN -config /config/serverconfig.txt -worldpath /world -logpath /world <&3 &
+SERVER_PID=$!
+exec 3>&1
+wait $SERVER_PID
+WRAPPER_EOF
+
+RUN chmod +x /app/terraria/wrapper.sh
+
+# Create s6 service
+RUN mkdir -p /etc/services.d/terraria && \
+    echo -e '#!/usr/bin/with-contenv bash\ncd /app/terraria\nexec s6-setuidgid abc /app/terraria/wrapper.sh' > /etc/services.d/terraria/run && \
+    chmod +x /etc/services.d/terraria/run
 
 COPY root/ /
 
-RUN sed -i 's|#!/usr/bin/with-contenv bash|#!/bin/bash|g' /etc/cont-init.d/30-config && \
-    chmod +x /etc/cont-init.d/30-config
-
 EXPOSE 7777
-VOLUME ["/world","/config"]
-
-ENTRYPOINT ["/init"]
-
-CMD ["s6-setuidgid", "terraria", "/app/terraria/run.sh"]
+VOLUME ["/world", "/config"]

@@ -1,23 +1,31 @@
-#!/bin/bash
-#update user
+#!/usr/bin/with-contenv bash
+
 PUID=${PUID:-911}
 PGID=${PGID:-911}
 
-groupmod -o -g "$PGID" terraria
-usermod -o -u "$PUID" terraria
-echo "UID: $PUID"
-echo "GID: $PGID"
-# permissions
-chmod -R a+X /root
-chown -R terraria:terraria /root/.local/share/Terraria
-chown -R terraria \
-	/app/terraria/bin
-chmod a+x /app/terraria/bin/TerrariaServer.bin.x86_64
-if [[ ! -r /config/serverconfig.txt ]]; then
-	echo "No serverconfig.txt found. Creating a default one"
-	echo "world=/world/World.wld" > /config/serverconfig.txt
-	echo "worldpath=/world" >> /config/serverconfig.txt
-        echo "worldname=Terraria"
-	echo "autocreate=2" >> /config/serverconfig.txt
-	chown "$PUID:$PGID" /config/serverconfig.txt
+groupmod -o -g "$PGID" abc
+usermod -o -u "$PUID" abc
+
+echo "User uid: $(id -u abc)"
+echo "User gid: $(id -g abc)"
+
+mkdir -p /config/.local/share/Terraria /world
+
+[[ ! -f /config/.local/share/Terraria/favorites.json ]] && \
+    cp /defaults/favorites.json /config/.local/share/Terraria/
+
+if [[ ! -f /config/serverconfig.txt ]]; then
+    cat > /config/serverconfig.txt <<EOF
+world=/world/World.wld
+worldpath=/world
+worldname=Terraria
+autocreate=2
+maxplayers=8
+port=7777
+password=
+motd=Welcome to Terraria!
+EOF
 fi
+
+chown -R abc:abc /app/terraria /config /world
+chmod 644 /config/serverconfig.txt
