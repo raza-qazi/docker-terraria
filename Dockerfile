@@ -1,4 +1,4 @@
-FROM quay.io/justcontainers/base
+FROM ghcr.io/linuxserver/baseimage-ubuntu:jammy
 
 ARG version="1453"
 LABEL maintainer="github@aram.nubmail.ca"
