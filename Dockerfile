@@ -22,139 +22,178 @@ RUN \
  apt-get clean && \
  rm -rf /tmp/* /var/lib/apt/lists/* /var/tmp/*
 
-# Create wrapper with proper error handling
+# Create tserver management script
+RUN cat > /usr/local/bin/tserver <<'SERVER_EOF'
+#!/bin/bash
+# Terraria Server Management Tool
+
+PIPE="/tmp/terraria-cmd"
+
+case "$1" in
+    console)
+        if [ ! -p "$PIPE" ]; then
+            echo "ERROR: Server is not running"
+            exit 1
+        fi
+        echo "╔═══════════════════════════════════════════════╗"
+        echo "║     Terraria Server - Interactive Console    ║"
+        echo "╚═══════════════════════════════════════════════╝"
+        echo ""
+        echo "Connected. Type commands and press Enter."
+        echo "Press Ctrl+C to exit console."
+        echo "───────────────────────────────────────────────"
+        tail -f /world/server*.log 2>/dev/null &
+        TAIL_PID=$!
+        trap "kill $TAIL_PID 2>/dev/null; echo ''; echo 'Disconnected.'; exit 0" SIGINT SIGTERM
+        while read -p "> " CMD; do
+            [ -n "$CMD" ] && echo "$CMD" > "$PIPE"
+        done
+        ;;
+    logs)
+        echo "Watching server logs (Ctrl+C to exit)..."
+        echo "───────────────────────────────────────────────"
+        tail -f /world/server*.log 2>/dev/null
+        ;;
+    *)
+        if [ -z "$1" ]; then
+            echo "Terraria Server Management Tool"
+            echo ""
+            echo "Usage:"
+            echo "  tserver console       - Interactive console with live output"
+            echo "  tserver logs          - Watch server logs"
+            echo "  tserver <command>     - Send single command to server"
+            echo ""
+            echo "Examples:"
+            echo "  tserver console"
+            echo "  tserver help"
+            echo "  tserver playing"
+            echo "  tserver save"
+            echo "  tserver say Hello everyone!"
+            exit 0
+        fi
+        if [ ! -p "$PIPE" ]; then
+            echo "ERROR: Server is not running"
+            exit 1
+        fi
+        echo "$@" > "$PIPE"
+        echo "✓ Command sent: $@"
+        echo "  Use 'tserver logs' or 'tserver console' to see server response"
+        ;;
+esac
+SERVER_EOF
+
+# Create wrapper with startup instructions
 RUN cat > /app/terraria/wrapper.sh <<'WRAPPER_EOF'
 #!/bin/bash
 
 PIPE="/tmp/terraria-cmd"
 SERVER_BIN="/app/terraria/TerrariaServer.bin.x86_64"
+SHUTDOWN_INITIATED=0
 
 echo "==================================="
-echo "Terraria Server Wrapper Starting"
+echo "Terraria Server Initializing..."
 echo "==================================="
 
-# Verify server binary exists and is executable
-if [ ! -f "$SERVER_BIN" ]; then
-    echo "ERROR: Server binary not found at $SERVER_BIN"
+# Verify files
+if [ ! -f "$SERVER_BIN" ] || [ ! -f /config/serverconfig.txt ]; then
+    echo "ERROR: Missing required files"
     exit 1
 fi
-
-if [ ! -x "$SERVER_BIN" ]; then
-    echo "ERROR: Server binary is not executable"
-    exit 1
-fi
-
-# Verify config exists
-if [ ! -f /config/serverconfig.txt ]; then
-    echo "ERROR: Configuration file not found"
-    exit 1
-fi
-
-echo "✓ Server binary found"
-echo "✓ Configuration found"
 
 # Create pipe
 rm -f "$PIPE"
 mkfifo "$PIPE"
-echo "✓ Command pipe created: $PIPE"
 
 # Shutdown handler
 shutdown_server() {
+    if [ $SHUTDOWN_INITIATED -eq 1 ]; then
+        return
+    fi
+    SHUTDOWN_INITIATED=1
+    
+    echo ""
     echo "==================================="
-    echo "Shutdown signal received"
+    echo "Shutting down server..."
     echo "==================================="
     
     if [ -n "$SERVER_PID" ] && kill -0 $SERVER_PID 2>/dev/null; then
-        echo "Sending exit command..."
+        echo "Sending save and exit command..."
         echo "exit" > "$PIPE" 2>/dev/null || true
         
-        # Wait for graceful shutdown
         local count=0
         while kill -0 $SERVER_PID 2>/dev/null && [ $count -lt 30 ]; do
             sleep 1
             count=$((count + 1))
-            echo "Waiting for server to stop... ($count/30)"
         done
         
-        # Force kill if needed
         if kill -0 $SERVER_PID 2>/dev/null; then
-            echo "Force stopping server..."
+            echo "Forcing shutdown..."
             kill -9 $SERVER_PID 2>/dev/null || true
         fi
     fi
     
+    kill $TAIL_PID 2>/dev/null || true
     rm -f "$PIPE"
     echo "Server stopped"
-    exit 0
 }
 
-trap 'shutdown_server' SIGTERM SIGINT EXIT
+trap 'shutdown_server' SIGTERM SIGINT
 
-# Start a background process to keep pipe open
+# Start pipe keepalive
 tail -f /dev/null > "$PIPE" &
 TAIL_PID=$!
-echo "✓ Pipe keepalive started (PID: $TAIL_PID)"
 
-# Start server with output
-echo "==================================="
-echo "Starting Terraria Server..."
-echo "Command: $SERVER_BIN -config /config/serverconfig.txt -worldpath /world -logpath /world"
-echo "==================================="
-
+# Start server
 cd /app/terraria
-
-$SERVER_BIN \
-    -config /config/serverconfig.txt \
-    -worldpath /world \
-    -logpath /world < "$PIPE" &
-
+$SERVER_BIN -config /config/serverconfig.txt -worldpath /world -logpath /world < "$PIPE" &
 SERVER_PID=$!
-echo "Server process started (PID: $SERVER_PID)"
 
-# Check if process is still running after 2 seconds
-sleep 2
+# Wait for server to initialize
+sleep 3
+
+# Verify server is running
 if ! kill -0 $SERVER_PID 2>/dev/null; then
-    echo "ERROR: Server process died immediately!"
-    echo "Check /world/server.log for details"
+    echo "ERROR: Server failed to start"
     exit 1
 fi
 
-echo "✓ Server is running"
-echo "==================================="
+# Print usage instructions after server starts
+echo ""
+echo "╔═══════════════════════════════════════════════════════════╗"
+echo "║                 Terraria Server Ready                     ║"
+echo "╚═══════════════════════════════════════════════════════════╝"
+echo ""
+echo "Server is running on port 7777"
+echo ""
+echo "HOW TO INTERACT WITH THE SERVER:"
+echo "───────────────────────────────────────────────────────────"
+echo ""
+echo "  Interactive Console (recommended):"
+echo "    docker exec -it terraria tserver console"
+echo ""
+echo "  Watch Server Logs:"
+echo "    docker exec -it terraria tserver logs"
+echo ""
+echo "  Send Single Commands:"
+echo "    docker exec terraria tserver help"
+echo "    docker exec terraria tserver playing"
+echo "    docker exec terraria tserver save"
+echo ""
+echo "  View from host machine:"
+echo "    docker logs -f terraria"
+echo ""
+echo "═══════════════════════════════════════════════════════════"
+echo ""
 
 # Wait for server
 wait $SERVER_PID
 EXIT_CODE=$?
 
-# Cleanup
-kill $TAIL_PID 2>/dev/null || true
-rm -f "$PIPE"
-
-echo "Server exited with code: $EXIT_CODE"
+shutdown_server
 exit $EXIT_CODE
 WRAPPER_EOF
 
-# Create command helper
-RUN cat > /usr/local/bin/tsay <<'CMD_EOF'
-#!/bin/bash
-PIPE="/tmp/terraria-cmd"
-
-if [ ! -p "$PIPE" ]; then
-    echo "ERROR: Server is not running (pipe not found)"
-    exit 1
-fi
-
-if [ $# -eq 0 ]; then
-    echo "Usage: tsay <command>"
-    echo "Examples: tsay help | tsay playing | tsay save"
-    exit 1
-fi
-
-echo "$@" > "$PIPE"
-echo "Command sent: $@"
-CMD_EOF
-
-RUN chmod +x /app/terraria/wrapper.sh /usr/local/bin/tsay
+RUN chmod +x /app/terraria/wrapper.sh /usr/local/bin/tserver
 
 # Create s6 service
 RUN mkdir -p /etc/services.d/terraria && \
