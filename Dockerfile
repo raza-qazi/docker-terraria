@@ -15,7 +15,7 @@ RUN \
  mv /tmp/terraria/${version}/Linux/* /app/terraria/bin && \
  echo "**** creating user ****" && \
  mkdir -p /config && \
- useradd -u 911 -U -d /config -s /bin/false -G users terraria && \
+ useradd -U -d /config -s /bin/false -G users terraria && \
  echo "**** cleanup ****" && \
  apt-get clean && \
  rm -rf \
