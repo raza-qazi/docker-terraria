@@ -3,7 +3,6 @@ FROM ghcr.io/linuxserver/baseimage-ubuntu:jammy
 ARG VERSION="1453"
 LABEL maintainer="your-email@example.com"
 
-
 RUN \
  apt-get update && \
  apt-get install -y unzip curl && \
@@ -18,26 +17,47 @@ RUN \
  apt-get clean && \
  rm -rf /tmp/* /var/tmp/*
 
-# Create wrapper script
+# Create wrapper script with named pipe
 RUN cat > /app/terraria/wrapper.sh <<'EOF'
 #!/bin/bash
 SERVER_BIN="/app/terraria/TerrariaServer.bin.x86_64"
+PIPE="/tmp/terraria-input"
+
 echo "Starting Terraria Server..."
+
+# Create named pipe
+rm -f "$PIPE"
+mkfifo "$PIPE"
 
 shutdown_server() {
     echo "Shutdown signal received, saving world..."
-    echo "exit" >&3
-    wait $SERVER_PID
+    echo "exit" > "$PIPE"
+    sleep 2
+    wait $SERVER_PID 2>/dev/null
+    rm -f "$PIPE"
     echo "Server stopped"
     exit 0
 }
 
 trap 'shutdown_server' SIGTERM SIGINT
 
-$SERVER_BIN -config /config/serverconfig.txt -worldpath /world -logpath /world <&3 &
+# Keep pipe open in background
+tail -f "$PIPE" &
+TAIL_PID=$!
+
+# Start server
+$SERVER_BIN -config /config/serverconfig.txt -worldpath /world -logpath /world < "$PIPE" &
 SERVER_PID=$!
-exec 3>&1
+
+# Wait for server
 wait $SERVER_PID
+EXIT_CODE=$?
+
+# Cleanup
+kill $TAIL_PID 2>/dev/null
+rm -f "$PIPE"
+
+exit $EXIT_CODE
 EOF
 
 # Create s6 service
@@ -48,13 +68,12 @@ cd /app/terraria
 exec s6-setuidgid abc /app/terraria/wrapper.sh
 EOF
 
-# Set all permissions
+# Set permissions
 RUN chmod +x /app/terraria/wrapper.sh && \
     chmod +x /etc/services.d/terraria/run
 
 COPY root/ /
 
-# Fix permissions on copied files
 RUN chmod +x /etc/cont-init.d/30-config
 
 EXPOSE 7777
