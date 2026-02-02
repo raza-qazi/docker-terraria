@@ -2,6 +2,11 @@ name: Build - Latest
 
 on:
   workflow_dispatch:
+    inputs:
+      terraria_version:
+        description: 'Terraria Server Version (e.g., 1449)'
+        required: true
+        default: '1453'
   push:
     branches:
       - 'master'
@@ -29,3 +34,5 @@ jobs:
         with:
           push: true
           tags: ghcr.io/${{ github.repository }}:latest
+          build-args: |
+            version=${{ inputs.terraria_version || '1453' }}
