@@ -4,7 +4,6 @@ ARG version="1453"
 LABEL maintainer="your-email@example.com"
 
 RUN \
- echo "**** install terraria ****" && \
  apt-get update && \
  apt-get install -y unzip curl && \
  mkdir -p /root/.local/share/Terraria && \
@@ -13,11 +12,10 @@ RUN \
  curl -L -o /tmp/terraria.zip "https://terraria.org/api/download/pc-dedicated-server/terraria-server-${version}.zip" && \
  unzip /tmp/terraria.zip ${version}'/Linux/*' -d /tmp/terraria && \
  mv /tmp/terraria/${version}/Linux/* /app/terraria/bin && \
- chmod +x /app/terraria/bin/TerrariaServer.bin.x86_64 && \
- echo "**** creating user ****" && \
  mkdir -p /config && \
  useradd -U -d /config -s /bin/false -G users terraria && \
- echo "**** cleanup ****" && \
+ chmod +x /app/terraria/bin/TerrariaServer.bin.x86_64 && \
+ chown -R terraria:terraria /app/terraria && \
  apt-get clean && \
  rm -rf \
     /tmp/* \
@@ -25,8 +23,11 @@ RUN \
 
 COPY root/ /
 
+RUN sed -i 's|#!/usr/bin/with-contenv bash|#!/bin/bash|g' /etc/cont-init.d/30-config && \
+    chmod +x /etc/cont-init.d/30-config
+
 EXPOSE 7777
 VOLUME ["/world","/config"]
 
 ENTRYPOINT ["/init"]
-CMD ["s6-setuidgid", "terraria", "/app/terraria/bin/TerrariaServer.bin.x86_64", "-config", "/config/serverconfig.txt"]
+CMD ["s6-setuidgid", "terraria", "/app/terraria/bin/TerrariaServer.bin.x86_64", "-config", "/config/serverconfig.txt", "-worldpath", "/world", "-logpath", "/world"]
